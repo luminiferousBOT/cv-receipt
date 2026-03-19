@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Interactive 3D CV Receipts</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #e5e5e5;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            touch-action: none;
+        }
+
+        #wire-container {
+            position: absolute;
+            top: 15%;
+            left: 0;
+            width: 100%;
+            height: 10px;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        #wire {
+            position: absolute;
+            top: 0;
+            left: -10%;
+            width: 120%;
+            height: 3px;
+            background: #aaa;
+            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        #wire::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: #fff;
+        }
+
+        #glcanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            cursor: grab;
+        }
+
+        #glcanvas:active {
+            cursor: grabbing;
+        }
+
+        #ui {
+            position: absolute;
+            bottom: 40px;
+            width: 100%;
+            text-align: center;
+            z-index: 2;
+            pointer-events: none;
+            user-select: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+
+        #ui p {
+            margin: 0;
+            color: #888;
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-btn {
+            pointer-events: auto;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 24px;
+            color: #333;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+        }
+
+        .nav-btn:hover {
+            background: #fff;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .nav-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        #indicator {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            background: rgba(0, 0, 0, 0.1);
+            border: 2px solid rgba(0, 0, 0, 0.25);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="wire-container">
+        <div id="wire"></div>
+    </div>
+    <canvas id="glcanvas"></canvas>
+    <div id="ui">
+        <button id="prevBtn" class="nav-btn" disabled>&#8592;</button>
+        <p>Grab and drag</p>
+        <button id="nextBtn" class="nav-btn">&#8594;</button>
+    </div>
+    <div id="indicator"></div>
+
+    <script>
+        // --- 1. Texture Generation (2D Canvas) ---
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            const paragraphs = text.split('\n');
+            let currentY = y;
+
+            for (let i = 0; i < paragraphs.length; i++) {
+                const words = paragraphs[i].split(' ');
+                let line = '';
+
+                for (let n = 0; n < words.length; n++) {
+                    const testLine = line + words[n] + ' ';
+                    const metrics = context.measureText(testLine);
+                    const testWidth = metrics.width;
+
+                    if (testWidth > maxWidth && n > 0) {
+                        context.fillText(line, x, currentY);
+                        line = words[n] + ' ';
+                        currentY += lineHeight;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                context.fillText(line, x, currentY);
+                currentY += lineHeight;
+            }
+        }
+
+        function createReceiptTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 2048;
+            const ctx = canvas.getContext('2d');
+
+            ctx.scale(2, 2);
+            const W = 512;
+            const H = 1024;
+
+            // Paper background
+            ctx.fillStyle = '#f8f8f4';
+            ctx.fillRect(0, 0, W, H);
+
+            // Text settings
+            ctx.fillStyle = '#1a1a1a';
+            ctx.textAlign = 'center';
+
+            if (type === 'profile') {
+                ctx.font = 'bold 36px monospace';
+                ctx.fillText('DEVASHISH KAUSHIK', W / 2, 90);
+
+                ctx.font = '18px monospace';
+                ctx.fillStyle = '#444';
+                ctx.fillText('Python | ML | Fullstack', W / 2, 125);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = '15px monospace';
+                ctx.fillText('doraplex123@gmail.com', W / 2, 165);
+                ctx.fillText('+91 6294756321', W / 2, 185);
+                ctx.fillText('github.com/luminiferousBOT', W / 2, 205);
+
+                ctx.textAlign = 'left';
+                ctx.fillText('- - - - - - - - - - - - - - - - - - -', 20, 250);
+
+                ctx.font = 'bold 22px monospace';
+                ctx.fillText('SUMMARY', 40, 290);
+                ctx.font = '16px monospace';
+                wrapText(ctx, 'Self Taught | Fullstack Developer | ML Aspirant\n\nWith a solid foundation in Fullstack development, I craft responsive frontends. My curiosity about data driving decisions led me to Python and Machine Learning. I build intelligent, end-to-end web solutions.', 40, 330, W - 80, 24);
+
+                ctx.fillText('- - - - - - - - - - - - - - - - - - -', 20, 480);
+
+                ctx.font = 'bold 22px monospace';
+                ctx.fillText('OBJECTIVE', 40, 520);
+                ctx.font = '16px monospace';
+                wrapText(ctx, "Pivoting to mastering Deep Learning. I enjoy the challenge of extracting patterns from raw data using Python, and presenting those insights through a clean UI. I believe the next generation of Intelligence will be Agentic, solving real-life problems through deep reasoning.", 40, 560, W - 80, 24);
+
+            } else if (type === 'experience') {
+                ctx.font = 'bold 36px monospace';
+                ctx.fillText('PROJECTS', W / 2, 90);
+
+                ctx.textAlign = 'left';
+                ctx.fillText('- - - - - - - - - - - - - - - - - - -', 20, 140);
+
+                // Project 1
+                ctx.font = 'bold 20px monospace';
+                ctx.fillText('Macroweaver', 40, 190);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#666';
+                ctx.fillText('AI Economic Policy Advisor', 40, 215);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = '16px monospace';
+                wrapText(ctx, 'Interactive simulator modeling the macroeconomic impacts of government policy changes. Users adjust economic levers to observe real-time projections on national output and inflation, accompanied by AI-generated analytical explanations.', 40, 250, W - 80, 24);
+
+                // Project 2
+                ctx.font = 'bold 20px monospace';
+                ctx.fillText('Sikkim PSC Preparation Hub', 40, 430);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#666';
+                ctx.fillText('Open-source Learning Platform', 40, 455);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = '16px monospace';
+                wrapText(ctx, 'A free platform tailored for Sikkim PSC aspirants. Provides quality study materials, mock tests, and AI-powered notes with access to 5000+ MCQs and Flashcards without any subscription fees.', 40, 490, W - 80, 24);
+
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#666';
+                ctx.textAlign = 'center';
+                ctx.fillText('Visit Github for complete list of Projects', W / 2, 700);
+
+            } else if (type === 'education') {
+                ctx.font = 'bold 36px monospace';
+                ctx.fillText('EDUCATION', W / 2, 90);
+
+                ctx.textAlign = 'left';
+                ctx.fillText('- - - - - - - - - - - - - - - - - - -', 20, 140);
+
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('BTech, Civil Engineering', 40, 190);
+                ctx.font = '16px monospace';
+                ctx.fillText('Sikkim Manipal Institute of Technology', 40, 215);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#666';
+                ctx.fillText('2020 - 2024', 40, 235);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('Class XII, PCMB', 40, 280);
+                ctx.font = '16px monospace';
+                ctx.fillText('Sir Tashi Namgyal Senior Secondary School', 40, 305);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#666';
+                ctx.fillText('2018 - 2020', 40, 325);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillText('- - - - - - - - - - - - - - - - - - -', 20, 370);
+
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 28px monospace';
+                ctx.fillText('SKILLS', W / 2, 420);
+
+                ctx.textAlign = 'left';
+                ctx.font = '18px monospace';
+                wrapText(ctx, 'Languages:', 40, 460, W - 80, 24);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#444';
+                wrapText(ctx, 'Python, Javascript, HTML, CSS, Typescript, SQL', 40, 485, W - 80, 24);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = '18px monospace';
+                wrapText(ctx, 'Frameworks:', 40, 545, W - 80, 24);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#444';
+                wrapText(ctx, 'Tensorflow, Scikit-learn, Pandas, NumPy, Selenium WebDriver, Matplotlib React, Node.js, Express, WebGL, Tensorflow', 40, 570, W - 80, 24);
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = '18px monospace';
+                wrapText(ctx, 'Tools:', 40, 630, W - 80, 24);
+                ctx.font = '15px monospace';
+                ctx.fillStyle = '#444';
+                wrapText(ctx, 'Git, Figma, VS Code, CursorAI, Pycharm, Antigravity, Adobe Photoshop, Adobe Illustrator, Adobe XD, ', 40, 655, W - 80, 24);
+            }
+
+            // Footer on all
+            ctx.textAlign = 'center';
+            ctx.font = '20px monospace';
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillText('- - - - - - - - - - - - - - - - - - -', W / 2, H - 120);
+            ctx.fillText('Swipe or click next!', W / 2, H - 70);
+
+            // Barcode
+            ctx.fillStyle = '#1a1a1a';
+            const barCodeY = H - 40;
+            for (let i = 0; i < 150; i += Math.random() * 8 + 2) {
+                ctx.fillRect(W / 2 - 75 + i, barCodeY, Math.random() * 4 + 1, 20);
+            }
+
+            return canvas;
+        }
+
+        // --- 2. WebGL Setup ---
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl', { alpha: true });
+        let aspect = 1;
+
+        function resize() {
+            canvas.width = window.innerWidth * window.devicePixelRatio;
+            canvas.height = window.innerHeight * window.devicePixelRatio;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            aspect = canvas.width / canvas.height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const vsSource = `
+            attribute vec3 a_pos;
+            attribute vec3 a_norm;
+            attribute vec2 a_uv;
+            uniform mat4 u_proj;
+            uniform mat4 u_view;
+            varying vec3 v_norm;
+            varying vec2 v_uv;
+            void main() {
+                v_norm = a_norm;
+                v_uv = a_uv;
+                gl_Position = u_proj * u_view * vec4(a_pos, 1.0);
+            }
+        `;
+
+        const fsSource = `
+            precision mediump float;
+            varying vec3 v_norm;
+            varying vec2 v_uv;
+            uniform sampler2D u_tex;
+            void main() {
+                vec3 norm = normalize(v_norm);
+                if (!gl_FrontFacing) norm = -norm;
+                
+                vec3 lightDir1 = normalize(vec3(0.4, 0.8, 0.6));
+                vec3 lightDir2 = normalize(vec3(-0.5, -0.2, 0.8));
+                
+                float diff1 = max(dot(norm, lightDir1), 0.0);
+                float diff2 = max(dot(norm, lightDir2), 0.0);
+                float ambient = 0.55;
+                
+                vec4 texColor = texture2D(u_tex, v_uv);
+                vec3 finalColor = texColor.rgb * (ambient + diff1 * 0.4 + diff2 * 0.2);
+                
+                gl_FragColor = vec4(finalColor, texColor.a);
+            }
+        `;
+
+        function createShader(type, source) {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, source);
+            gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(s));
+                return null;
+            }
+            return s;
+        }
+
+        const program = gl.createProgram();
+        gl.attachShader(program, createShader(gl.VERTEX_SHADER, vsSource));
+        gl.attachShader(program, createShader(gl.FRAGMENT_SHADER, fsSource));
+        gl.linkProgram(program);
+        gl.useProgram(program);
+
+        const aPos = gl.getAttribLocation(program, "a_pos");
+        const aNorm = gl.getAttribLocation(program, "a_norm");
+        const aUv = gl.getAttribLocation(program, "a_uv");
+        const uProj = gl.getUniformLocation(program, "u_proj");
+        const uView = gl.getUniformLocation(program, "u_view");
+        const uTex = gl.getUniformLocation(program, "u_tex");
+
+        // Generate 3 textures
+        const textures = [];
+        const receiptTypes = ['profile', 'experience', 'education'];
+
+        receiptTypes.forEach(type => {
+            const canvasImg = createReceiptTexture(type);
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvasImg);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            textures.push(tex);
+        });
+
+        // --- 3. Physics Setup ---
+        const totalReceipts = 3;
+        const numX = 25;
+        const numY = 50;
+        const ptsPerReceipt = numX * numY;
+        const numParticles = ptsPerReceipt * totalReceipts;
+
+        const width = 3.0;
+        const height = 6.0;
+
+        // Spread receipts far apart so only one is visible at a time
+        const receiptsSpacing = 15.0;
+        const offsetsX = [0.0, receiptsSpacing, receiptsSpacing * 2];
+
+        const particles = [];
+        const posData = new Float32Array(numParticles * 3);
+        const normalData = new Float32Array(numParticles * 3);
+        const uvData = new Float32Array(numParticles * 2);
+
+        for (let r = 0; r < totalReceipts; r++) {
+            let locOffsetX = offsetsX[r];
+            for (let y = 0; y < numY; y++) {
+                for (let x = 0; x < numX; x++) {
+                    let px = (x / (numX - 1) - 0.5) * width + locOffsetX;
+                    // Adjusted starting height slightly to align with wire
+                    let py = -(y / (numY - 1)) * height + 0.8;
+                    let pz = 0.0;
+                    
+                    let i = r * ptsPerReceipt + y * numX + x;
+                    particles.push({ x: px, y: py, z: pz, ox: px, oy: py, oz: pz });
+
+                    uvData[i * 2] = x / (numX - 1);
+                    uvData[i * 2 + 1] = y / (numY - 1);
+                }
+            }
+        }
+
+        const constraints = [];
+        function addC(i1, i2) {
+            let dx = particles[i2].x - particles[i1].x;
+            let dy = particles[i2].y - particles[i1].y;
+            let dz = particles[i2].z - particles[i1].z;
+            constraints.push({ p1: i1, p2: i2, rest: Math.sqrt(dx * dx + dy * dy + dz * dz) });
+        }
+
+        for (let r = 0; r < totalReceipts; r++) {
+            let offsetI = r * ptsPerReceipt;
+            for (let y = 0; y < numY; y++) {
+                for (let x = 0; x < numX; x++) {
+                    let i = offsetI + y * numX + x;
+                    // Structural
+                    if (x < numX - 1) addC(i, i + 1);
+                    if (y < numY - 1) addC(i, i + numX);
+                    // Shear
+                    if (x < numX - 1 && y < numY - 1) {
+                        addC(i, i + numX + 1);
+                        addC(i + 1, i + numX);
+                    }
+                    // Bending
+                    if (x < numX - 2) addC(i, i + 2);
+                    if (y < numY - 2) addC(i, i + numX * 2);
+                }
+            }
+        }
+
+        const indicesArray = [[], [], []];
+        for (let r = 0; r < totalReceipts; r++) {
+            let offsetI = r * ptsPerReceipt;
+            let indices = indicesArray[r];
+            for (let y = 0; y < numY - 1; y++) {
+                for (let x = 0; x < numX - 1; x++) {
+                    let i = offsetI + y * numX + x;
+                    indices.push(i, i + 1, i + numX);
+                    indices.push(i + 1, i + numX + 1, i + numX);
+                }
+            }
+        }
+
+        const posBuf = gl.createBuffer();
+        const normBuf = gl.createBuffer();
+
+        const uvBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, uvData, gl.STATIC_DRAW);
+
+        const idxBufs = [];
+        for (let r = 0; r < totalReceipts; r++) {
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indicesArray[r]), gl.STATIC_DRAW);
+            idxBufs.push(buf);
+        }
+
+        gl.enable(gl.DEPTH_TEST);
+
+        // Matrices
+        const projMatrix = new Float32Array(16);
+        const viewMatrix = new Float32Array(16);
+
+        function setPerspective(out, fovy, aspect, near, far) {
+            let f = 1.0 / Math.tan(fovy / 2);
+            let nf = 1 / (near - far);
+            out.fill(0);
+            out[0] = f / aspect;
+            out[5] = f;
+            out[10] = (far + near) * nf;
+            out[11] = -1;
+            out[14] = (2 * far * near) * nf;
+        }
+
+        function setTranslation(out, x, y, z) {
+            out.fill(0);
+            out[0] = 1; out[5] = 1; out[10] = 1; out[15] = 1;
+            out[12] = x; out[13] = y; out[14] = z;
+        }
+
+        // Camera Setup & Carousel State
+        let currentReceiptIndex = 0;
+        const camPos = { x: offsetsX[currentReceiptIndex], y: -2.0, z: 7.2 };
+        let targetCamX = camPos.x;
+        const fov = 45 * Math.PI / 180;
+
+        // UI Handlers
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        function updateUI() {
+            prevBtn.disabled = currentReceiptIndex === 0;
+            nextBtn.disabled = currentReceiptIndex === totalReceipts - 1;
+            targetCamX = offsetsX[currentReceiptIndex];
+        }
+
+        prevBtn.addEventListener('click', () => {
+            if (currentReceiptIndex > 0) {
+                currentReceiptIndex--;
+                updateUI();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentReceiptIndex < totalReceipts - 1) {
+                currentReceiptIndex++;
+                updateUI();
+            }
+        });
+
+        // --- 4. Interaction ---
+        let pointerX = 0, pointerY = 0;
+        let isDown = false;
+        let grabbedIndex = -1;
+        let grabDepth = 0;
+        const indicator = document.getElementById('indicator');
+
+        function getRay() {
+            let tanFov = Math.tan(fov / 2);
+            let dx = pointerX * aspect * tanFov;
+            let dy = pointerY * tanFov;
+            let dz = -1;
+            let len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            return {
+                origin: { x: camPos.x, y: camPos.y, z: camPos.z }, // Origin moves with camera!
+                dir: { x: dx / len, y: dy / len, z: dz / len }
+            };
+        }
+
+        function updatePointer(e) {
+            pointerX = (e.clientX / window.innerWidth) * 2 - 1;
+            pointerY = -(e.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        window.addEventListener('pointerdown', e => {
+            // Don't grab if clicking UI buttons
+            if (e.target.tagName === 'BUTTON') return;
+
+            isDown = true;
+            updatePointer(e);
+
+            let ray = getRay();
+            let minDist = Infinity;
+            let bestIdx = -1;
+
+            // Only check particles for the currently viewed receipt to optimize
+            let startIdx = currentReceiptIndex * ptsPerReceipt;
+            let endIdx = startIdx + ptsPerReceipt;
+
+            for (let i = startIdx; i < endIdx; i++) {
+                let p = particles[i];
+                let vx = p.x - ray.origin.x;
+                let vy = p.y - ray.origin.y;
+                let vz = p.z - ray.origin.z;
+
+                let t = vx * ray.dir.x + vy * ray.dir.y + vz * ray.dir.z;
+                let px = ray.origin.x + ray.dir.x * t;
+                let py = ray.origin.y + ray.dir.y * t;
+                let pz = ray.origin.z + ray.dir.z * t;
+
+                let dx = p.x - px;
+                let dy = p.y - py;
+                let dz = p.z - pz;
+                let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                if (dist < minDist && dist < 1.0) {
+                    minDist = dist;
+                    bestIdx = i;
+                    grabDepth = t;
+                }
+            }
+
+            if (bestIdx !== -1) {
+                grabbedIndex = bestIdx;
+                indicator.style.display = 'block';
+                indicator.style.left = e.clientX + 'px';
+                indicator.style.top = e.clientY + 'px';
+            }
+        });
+
+        window.addEventListener('pointermove', e => {
+            updatePointer(e);
+            if (grabbedIndex !== -1) {
+                let ray = getRay();
+                let p = particles[grabbedIndex];
+                p.x = ray.origin.x + ray.dir.x * grabDepth;
+                p.y = ray.origin.y + ray.dir.y * grabDepth;
+                p.z = ray.origin.z + ray.dir.z * grabDepth;
+                p.ox = p.x; p.oy = p.y; p.oz = p.z;
+
+                indicator.style.left = e.clientX + 'px';
+                indicator.style.top = e.clientY + 'px';
+            }
+        });
+
+        const release = () => {
+            isDown = false;
+            grabbedIndex = -1;
+            indicator.style.display = 'none';
+        };
+        window.addEventListener('pointerup', release);
+        window.addEventListener('pointercancel', release);
+
+        // --- 5. Main Loop ---
+        let time = 0;
+        function render() {
+            time += 0.016;
+
+            // Camera animation
+            camPos.x += (targetCamX - camPos.x) * 0.1;
+
+            // Physics integration
+            let windX = Math.sin(time * 1.5) * 0.0015;
+            let windZ = Math.cos(time * 1.1) * 0.0015;
+
+            // To save performance, we can only heavily simulate the current and potentially adjacent receipts
+            for (let i = 0; i < numParticles; i++) {
+                // Determine which receipt this particle belongs to
+                let r = Math.floor(i / ptsPerReceipt);
+
+                // Extremely distant receipts can be paused or loosely simulated, but 3 receipts is fine to simulate all
+                let isPinned = false;
+                let offsetI = r * ptsPerReceipt;
+                if (i >= offsetI && i < offsetI + numX) {
+                    isPinned = true;
+                }
+
+                if (isPinned || i === grabbedIndex) continue; // Pinned or Grabbed
+
+                let p = particles[i];
+                let vx = (p.x - p.ox) * 0.985;
+                let vy = (p.y - p.oy) * 0.985;
+                let vz = (p.z - p.oz) * 0.985;
+
+                p.ox = p.x; p.oy = p.y; p.oz = p.z;
+
+                let localYId = Math.floor((i % ptsPerReceipt) / numX);
+                let windFactor = localYId / numY;
+                p.x += vx + windX * windFactor;
+                p.y += vy - 0.007; // Gravity
+                p.z += vz + windZ * windFactor;
+            }
+
+            // Constraints relaxation
+            const iterations = 15;
+            for (let iter = 0; iter < iterations; iter++) {
+                for (let i = 0; i < constraints.length; i++) {
+                    let c = constraints[i];
+                    let r = Math.floor(c.p1 / ptsPerReceipt);
+
+                    let p1 = particles[c.p1];
+                    let p2 = particles[c.p2];
+
+                    let dx = p2.x - p1.x;
+                    let dy = p2.y - p1.y;
+                    let dz = p2.z - p1.z;
+                    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                    let offsetI = r * ptsPerReceipt;
+                    let w1 = (c.p1 >= offsetI && c.p1 < offsetI + numX) ? 0 : 1;
+                    let w2 = (c.p2 >= offsetI && c.p2 < offsetI + numX) ? 0 : 1;
+
+                    if (c.p1 === grabbedIndex) w1 = 0;
+                    if (c.p2 === grabbedIndex) w2 = 0;
+
+                    let wSum = w1 + w2;
+
+                    if (wSum > 0) {
+                        let diff = (dist - c.rest) / (dist * wSum);
+                        let offsetX = dx * diff;
+                        let offsetY = dy * diff;
+                        let offsetZ = dz * diff;
+
+                        if (w1) { p1.x += offsetX; p1.y += offsetY; p1.z += offsetZ; }
+                        if (w2) { p2.x -= offsetX; p2.y -= offsetY; p2.z -= offsetZ; }
+                    }
+                }
+            }
+
+            // Update buffers & normals
+            normalData.fill(0);
+            for (let i = 0; i < numParticles; i++) {
+                let p = particles[i];
+                posData[i * 3] = p.x;
+                posData[i * 3 + 1] = p.y;
+                posData[i * 3 + 2] = p.z;
+            }
+
+            for (let r = 0; r < totalReceipts; r++) {
+                let indices = indicesArray[r];
+                for (let i = 0; i < indices.length; i += 3) {
+                    let i1 = indices[i];
+                    let i2 = indices[i + 1];
+                    let i3 = indices[i + 2];
+
+                    let v1x = posData[i1 * 3], v1y = posData[i1 * 3 + 1], v1z = posData[i1 * 3 + 2];
+                    let v2x = posData[i2 * 3], v2y = posData[i2 * 3 + 1], v2z = posData[i2 * 3 + 2];
+                    let v3x = posData[i3 * 3], v3y = posData[i3 * 3 + 1], v3z = posData[i3 * 3 + 2];
+
+                    let dx1 = v2x - v1x, dy1 = v2y - v1y, dz1 = v2z - v1z;
+                    let dx2 = v3x - v1x, dy2 = v3y - v1y, dz2 = v3z - v1z;
+
+                    let nx = dy1 * dz2 - dz1 * dy2;
+                    let ny = dz1 * dx2 - dx1 * dz2;
+                    let nz = dx1 * dy2 - dy1 * dx2;
+
+                    normalData[i1 * 3] += nx; normalData[i1 * 3 + 1] += ny; normalData[i1 * 3 + 2] += nz;
+                    normalData[i2 * 3] += nx; normalData[i2 * 3 + 1] += ny; normalData[i2 * 3 + 2] += nz;
+                    normalData[i3 * 3] += nx; normalData[i3 * 3 + 1] += ny; normalData[i3 * 3 + 2] += nz;
+                }
+            }
+
+            // Render
+            gl.clearColor(0.898, 0.898, 0.898, 1.0); // original #e5e5e5 equivalent
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            setPerspective(projMatrix, fov, aspect, 0.1, 100.0);
+            setTranslation(viewMatrix, -camPos.x, -camPos.y, -camPos.z);
+
+            gl.uniformMatrix4fv(uProj, false, projMatrix);
+            gl.uniformMatrix4fv(uView, false, viewMatrix);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, posData, gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(aPos);
+            gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, normalData, gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(aNorm);
+            gl.vertexAttribPointer(aNorm, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+            gl.enableVertexAttribArray(aUv);
+            gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+
+            // Draw each receipt with its texture
+            for (let r = 0; r < totalReceipts; r++) {
+                // Optional optimization: Only draw if within viewing frustum 
+                let rx = offsetsX[r];
+                if (Math.abs(rx - camPos.x) < 15.0) {
+                    gl.bindTexture(gl.TEXTURE_2D, textures[r]);
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBufs[r]);
+                    gl.drawElements(gl.TRIANGLES, indicesArray[r].length, gl.UNSIGNED_SHORT, 0);
+                }
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+</body>
+
+</html>
